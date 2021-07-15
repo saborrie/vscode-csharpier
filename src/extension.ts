@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import * as cp from "child_process";
 
-function runFormatter(input: string): Promise<string> {
+const outputchannel = vscode.window.createOutputChannel("Csharpier");
+
+function format(input: string): Promise<string | null> {
   return new Promise((resolve, reject) => {
     // TODO handle the case where csharpier is not installed
     // TODO handle errors with csharpier parsing (return the input?)
@@ -15,7 +17,11 @@ function runFormatter(input: string): Promise<string> {
       output += chunk.toString();
     });
     csharpier.on("exit", () => {
-      resolve(output);
+      if (output === input) {
+        resolve(null);
+      } else {
+        resolve(output);
+      }
     });
 
     csharpier.stdin.write(input);
@@ -28,21 +34,26 @@ export function activate(context: vscode.ExtensionContext) {
     async provideDocumentFormattingEdits(
       document: vscode.TextDocument
     ): Promise<vscode.TextEdit[]> {
-      const unformatted = document.getText();
-      const formatted = await runFormatter(unformatted);
-
-      var firstLine = document.lineAt(0);
-      var lastLine = document.lineAt(document.lineCount - 1);
-      var textRange = new vscode.Range(
-        0,
-        firstLine.range.start.character,
-        document.lineCount - 1,
-        lastLine.range.end.character
-      );
-
-      return [vscode.TextEdit.replace(textRange, formatted)];
+      return await provideEdits(document);
     },
   });
+}
+
+async function provideEdits(document: vscode.TextDocument): Promise<vscode.TextEdit[]> {
+  outputchannel.appendLine(`Formatting started.`);
+  const hrStart = process.hrtime();
+  const result = await format(document.getText());
+  if (!result) {
+    return [];
+  }
+  const hrEnd = process.hrtime(hrStart);
+  outputchannel.appendLine(`Formatting completed in ${hrEnd[1] / 1000000}ms.`);
+  return [vscode.TextEdit.replace(fullDocumentRange(document), result)];
+}
+
+function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
+  const lastLineId = document.lineCount - 1;
+  return new vscode.Range(0, 0, lastLineId, document.lineAt(lastLineId).text.length);
 }
 
 export function deactivate() {}
